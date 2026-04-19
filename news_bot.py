@@ -51,7 +51,7 @@ def fetch_news(category: str, feeds: list[str], count: int) -> list[dict]:
 def summarize_with_gemini(articles: list[dict]) -> str:
     """Gemini AI로 뉴스 요약"""
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.0-flash")
 
     today = datetime.now().strftime("%Y년 %m월 %d일")
 
