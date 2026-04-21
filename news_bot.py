@@ -74,7 +74,7 @@ def summarize_with_groq(articles):
         }
     )
     return response.json()["choices"][0]["message"]["content"]
-
+print("Groq 응답:", response.json())
 
 def send_kakao_message(text):
     import json
