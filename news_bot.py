@@ -1,6 +1,7 @@
 import feedparser
 import requests
 import os
+import textwrap
 from datetime import datetime
 
 KAKAO_ACCESS_TOKEN = os.environ.get("KAKAO_ACCESS_TOKEN")
@@ -18,7 +19,6 @@ BACKUP_FEEDS = {
     ],
 }
 
-
 def fetch_news(category, feeds, count):
     articles = []
     for url in feeds:
@@ -35,7 +35,6 @@ def fetch_news(category, feeds, count):
         except Exception as e:
             print(f"RSS 피드 오류 ({url}): {e}")
     return articles[:count]
-
 
 def summarize_with_groq(articles):
     today = datetime.now().strftime("%Y년 %m월 %d일")
@@ -73,8 +72,15 @@ def summarize_with_groq(articles):
             "max_tokens": 1000,
         }
     )
-    return response.json()["choices"][0]["message"]["content"]
-print("Groq 응답:", response.json())
+    
+    # 수정 1: response.json() 출력 위치를 함수 안으로 이동
+    response_data = response.json()
+    print("Groq 응답 상태:", response.status_code)
+    
+    try:
+        return response_data["choices"][0]["message"]["content"]
+    except KeyError:
+        return "❌ 뉴스 요약 중 오류가 발생했습니다."
 
 def send_kakao_message(text):
     import json
@@ -83,22 +89,27 @@ def send_kakao_message(text):
         "Authorization": f"Bearer {KAKAO_ACCESS_TOKEN}",
         "Content-Type": "application/x-www-form-urlencoded",
     }
-    payload = {
-        "template_object": json.dumps({
-            "object_type": "text",
-            "text": text,
-            "link": {
-                "web_url": "https://news.naver.com",
-                "mobile_web_url": "https://news.naver.com",
-            },
-        }, ensure_ascii=False)
-    }
-    response = requests.post(url, headers=headers, data=payload)
-    if response.status_code == 200:
-        print("✅ 카카오톡 전송 성공!")
-    else:
-        print(f"❌ 전송 실패: {response.status_code} - {response.text}")
-
+    
+    # 수정 2: 카카오톡 텍스트 템플릿 200자 제한을 피하기 위해 메시지 분할
+    # 단어가 중간에 잘리지 않도록 190자 기준으로 안전하게 나눕니다.
+    chunks = textwrap.wrap(text, width=190, replace_whitespace=False)
+    
+    for idx, chunk in enumerate(chunks):
+        payload = {
+            "template_object": json.dumps({
+                "object_type": "text",
+                "text": chunk,
+                "link": {
+                    "web_url": "https://news.naver.com",
+                    "mobile_web_url": "https://news.naver.com",
+                },
+            }, ensure_ascii=False)
+        }
+        response = requests.post(url, headers=headers, data=payload)
+        if response.status_code == 200:
+            print(f"✅ 카카오톡 전송 성공! ({idx + 1}/{len(chunks)})")
+        else:
+            print(f"❌ 전송 실패 ({idx + 1}/{len(chunks)}): {response.status_code} - {response.text}")
 
 def main():
     print("📰 뉴스 수집 시작...")
@@ -122,7 +133,6 @@ def main():
 
     print("📱 카카오톡 전송 중...")
     send_kakao_message(summary)
-
 
 if __name__ == "__main__":
     main()
