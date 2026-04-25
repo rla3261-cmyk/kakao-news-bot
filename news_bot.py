@@ -2,6 +2,7 @@ import feedparser
 import requests
 import os
 import json
+import textwrap
 from datetime import datetime
 
 KAKAO_ACCESS_TOKEN = os.environ.get("KAKAO_ACCESS_TOKEN")
@@ -12,6 +13,9 @@ BACKUP_FEEDS = {
     "경제/주식": [
         "https://www.hankyung.com/feed/economy",
         "https://www.mk.co.kr/rss/30100041/",
+    ],
+    "미국주식": [  # 미국 증시 및 글로벌 동향 파악을 위한 피드 추가
+        "https://www.hankyung.com/feed/international",
     ],
     "스포츠": [
         "https://www.hankyung.com/feed/sports",
@@ -55,6 +59,9 @@ def summarize_with_groq(articles):
 [경제/주식]
 1. (제목) - (2~3문장 요약)
 
+[미국주식]
+1. (제목) - (2~3문장 요약)
+
 [스포츠]
 1. (제목) - (2~3문장 요약)
 
@@ -74,7 +81,10 @@ def summarize_with_groq(articles):
     )
     data = response.json()
     print("Groq 상태:", response.status_code)
-    return data["choices"][0]["message"]["content"]
+    try:
+        return data["choices"][0]["message"]["content"]
+    except KeyError:
+        return "❌ 뉴스 요약 중 오류가 발생했습니다."
 
 def send_kakao_message(text):
     url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
@@ -82,21 +92,26 @@ def send_kakao_message(text):
         "Authorization": f"Bearer {KAKAO_ACCESS_TOKEN}",
         "Content-Type": "application/x-www-form-urlencoded",
     }
-    payload = {
-        "template_object": json.dumps({
-            "object_type": "text",
-            "text": text[:900],
-            "link": {
-                "web_url": "https://news.naver.com",
-                "mobile_web_url": "https://news.naver.com",
-            },
-        }, ensure_ascii=False)
-    }
-    response = requests.post(url, headers=headers, data=payload)
-    if response.status_code == 200:
-        print("✅ 카카오톡 전송 성공!")
-    else:
-        print(f"❌ 전송 실패: {response.status_code} - {response.text}")
+    
+    # 카카오톡 제한(200자)을 우회하기 위해 190자씩 잘라서 전송합니다.
+    chunks = textwrap.wrap(text, width=190, replace_whitespace=False)
+    
+    for idx, chunk in enumerate(chunks):
+        payload = {
+            "template_object": json.dumps({
+                "object_type": "text",
+                "text": chunk,
+                "link": {
+                    "web_url": "https://news.naver.com",
+                    "mobile_web_url": "https://news.naver.com",
+                },
+            }, ensure_ascii=False)
+        }
+        response = requests.post(url, headers=headers, data=payload)
+        if response.status_code == 200:
+            print(f"✅ 카카오톡 전송 성공! ({idx+1}/{len(chunks)})")
+        else:
+            print(f"❌ 전송 실패: {response.status_code} - {response.text}")
 
 def main():
     print("📰 뉴스 수집 시작...")
@@ -105,6 +120,11 @@ def main():
     economy_articles = fetch_news("경제/주식", BACKUP_FEEDS["경제/주식"], NEWS_COUNT)
     all_articles.extend(economy_articles)
     print(f"경제 뉴스 {len(economy_articles)}개 수집 완료")
+
+    # 새로 추가된 미국주식 카테고리 수집
+    us_stock_articles = fetch_news("미국주식", BACKUP_FEEDS["미국주식"], NEWS_COUNT)
+    all_articles.extend(us_stock_articles)
+    print(f"미국주식 뉴스 {len(us_stock_articles)}개 수집 완료")
 
     sports_articles = fetch_news("스포츠", BACKUP_FEEDS["스포츠"], NEWS_COUNT)
     all_articles.extend(sports_articles)
